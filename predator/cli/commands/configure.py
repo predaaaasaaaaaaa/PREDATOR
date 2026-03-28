@@ -48,6 +48,78 @@ AMBER = "#FFB300"
 DIM = "#666666"
 
 
+# ─── Arrow-key interactive selection ─────────────────────────────────
+def _select_prompt(message: str, choices: list[dict], default: str | None = None) -> str | None:
+    """Arrow-key selection menu using InquirerPy, with Rich fallback."""
+    try:
+        from InquirerPy import inquirer
+        from InquirerPy.base.control import Choice
+
+        inq_choices = [
+            Choice(value=c["value"], name=c["name"])
+            for c in choices
+        ]
+
+        result = inquirer.select(
+            message=message,
+            choices=inq_choices,
+            default=default,
+            pointer=">>",
+            qmark="",
+            amark="",
+            instruction="(arrow keys to navigate, Enter to select)",
+        ).execute()
+        return result
+    except (ImportError, Exception):
+        # Fallback to numeric selection
+        console.print(f"\n[bold {RED}]{message}[/]")
+        for i, c in enumerate(choices, 1):
+            console.print(f"  [{CYAN}]{i}.[/] {c['name']}")
+        selection = Prompt.ask("Enter number", default="1")
+        try:
+            idx = int(selection) - 1
+            if 0 <= idx < len(choices):
+                return choices[idx]["value"]
+        except (ValueError, IndexError):
+            pass
+        return choices[0]["value"] if choices else None
+
+
+def _confirm_prompt(message: str, default: bool = True) -> bool:
+    """Confirmation prompt using InquirerPy, with Rich fallback."""
+    try:
+        from InquirerPy import inquirer
+        return inquirer.confirm(
+            message=message,
+            default=default,
+            qmark="",
+            amark="",
+        ).execute()
+    except (ImportError, Exception):
+        return Confirm.ask(f"  {message}", default=default)
+
+
+def _text_prompt(message: str, default: str = "", password: bool = False) -> str:
+    """Text input prompt using InquirerPy, with Rich fallback."""
+    try:
+        from InquirerPy import inquirer
+        if password:
+            return inquirer.secret(
+                message=message,
+                default=default,
+                qmark="",
+                amark="",
+            ).execute()
+        return inquirer.text(
+            message=message,
+            default=default,
+            qmark="",
+            amark="",
+        ).execute()
+    except (ImportError, Exception):
+        return Prompt.ask(f"  {message}", default=default, password=password)
+
+
 # ─── Channel onboarding instructions ──────────────────────────────────
 
 CHANNEL_INSTRUCTIONS: dict[str, dict] = {
@@ -289,38 +361,21 @@ def _configure_channels(config: PredatorConfig) -> PredatorConfig:
         console.print(table)
         console.print()
 
-        # Channel selection
-        choices = list(CHANNEL_INSTRUCTIONS.keys()) + ["done"]
-        console.print(f"[bold {RED}]Select a channel to configure:[/]")
-        for i, ch in enumerate(choices, 1):
-            label = CHANNEL_INSTRUCTIONS[ch]["name"] if ch in CHANNEL_INSTRUCTIONS else "Finish"
-            marker = ""
-            if ch in channel_status and channel_status[ch][0] == "configured":
-                marker = f" [{GREEN}](configured)[/]"
-            console.print(f"  [{CYAN}]{i}.[/] {label}{marker}")
+        # Channel selection with arrow keys
+        menu_choices = []
+        for ch_key in CHANNEL_INSTRUCTIONS:
+            label = CHANNEL_INSTRUCTIONS[ch_key]["name"]
+            status = channel_status.get(ch_key, ("not configured", ""))[0]
+            marker = " (configured)" if status == "configured" else ""
+            menu_choices.append({"value": ch_key, "name": f"{label}{marker}"})
+        menu_choices.append({"value": "done", "name": "Done — finish configuration"})
 
-        selection = Prompt.ask(
-            "Enter number (or 'done' to finish)",
-            default="done",
-        )
+        selection = _select_prompt("Select a channel to configure:", menu_choices, default="done")
 
-        if selection.lower() == "done" or selection == str(len(choices)):
+        if selection == "done" or selection is None:
             break
 
-        try:
-            idx = int(selection) - 1
-            if 0 <= idx < len(choices) - 1:
-                channel_key = choices[idx]
-            else:
-                print_error("Invalid selection")
-                continue
-        except ValueError:
-            # Try by name
-            if selection.lower() in CHANNEL_INSTRUCTIONS:
-                channel_key = selection.lower()
-            else:
-                print_error("Invalid selection")
-                continue
+        channel_key = selection
 
         # Configure the selected channel
         config = _onboard_channel(config, channel_key)
@@ -469,15 +524,17 @@ def _configure_providers(config: PredatorConfig) -> PredatorConfig:
                 else:
                     print_warning(f"Skipped — set {env_var} env var or run configure again")
 
-    # Default provider
+    # Default provider — arrow key selection
     console.print()
     current_default = config.providers.default
-    new_default = Prompt.ask(
-        f"  Default provider [{current_default}]",
-        choices=["anthropic", "openai", "openrouter", "ollama"],
-        default=current_default,
-    )
-    if new_default != current_default:
+    provider_choices = [
+        {"value": "anthropic", "name": "Anthropic (Claude)"},
+        {"value": "openai", "name": "OpenAI (GPT)"},
+        {"value": "openrouter", "name": "OpenRouter (multi-model)"},
+        {"value": "ollama", "name": "Ollama (local LLM)"},
+    ]
+    new_default = _select_prompt("Default LLM provider:", provider_choices, default=current_default)
+    if new_default and new_default != current_default:
         config.providers.default = new_default
         write_config(config)
         print_success(f"Default provider set to {new_default}")
@@ -763,37 +820,25 @@ def configure_cmd(section: Optional[str] = None):
         _, _, handler = SECTIONS[section]
         config = handler(config)
     else:
-        # Full interactive wizard — show menu
+        # Full interactive wizard — arrow key menu
         while True:
-            console.print()
-            console.print(f"[bold {RED}]What would you like to configure?[/]")
             console.print()
 
             section_list = list(SECTIONS.items())
-            for i, (key, (name, desc, _)) in enumerate(section_list, 1):
-                console.print(f"  [{CYAN}]{i}.[/] [bold]{name}[/] [{DIM}]— {desc}[/]")
-            console.print(f"  [{CYAN}]{len(section_list) + 1}.[/] [bold]Done[/] [{DIM}]— Exit configure[/]")
-            console.print()
+            menu_choices = [
+                {"value": key, "name": f"{name} — {desc}"}
+                for key, (name, desc, _) in section_list
+            ]
+            menu_choices.append({"value": "done", "name": "Done — exit configure"})
 
-            choice = Prompt.ask("Select section", default=str(len(section_list) + 1))
+            choice = _select_prompt("What would you like to configure?", menu_choices, default="done")
 
-            if choice.lower() == "done" or choice == str(len(section_list) + 1):
+            if choice == "done" or choice is None:
                 break
 
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(section_list):
-                    key, (_, _, handler) = section_list[idx]
-                    config = handler(config)
-                else:
-                    print_error("Invalid selection")
-            except ValueError:
-                # Try by name
-                if choice.lower() in SECTIONS:
-                    _, _, handler = SECTIONS[choice.lower()]
-                    config = handler(config)
-                else:
-                    print_error("Invalid selection")
+            if choice in SECTIONS:
+                _, _, handler = SECTIONS[choice]
+                config = handler(config)
 
     console.print()
     console.print(Panel(
