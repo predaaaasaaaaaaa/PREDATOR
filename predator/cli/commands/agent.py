@@ -13,7 +13,7 @@ from predator.cli.theme import (
 
 
 @click.command("agent")
-@click.option("-m", "--message", required=True, help="Message to send to the agent")
+@click.option("-m", "--message", default=None, help="Message to send to the agent")
 @click.option("--session-id", default="main", help="Session ID (default: main)")
 @click.option("--agent-id", default="default", help="Agent ID")
 @click.option("--model", default=None, help="Override model")
@@ -22,17 +22,24 @@ from predator.cli.theme import (
 @click.option("--local", is_flag=True, help="Run agent locally (no gateway)")
 @click.option("--json-output", "json_out", is_flag=True, help="Output as JSON")
 @click.option("--no-stream", is_flag=True, help="Disable streaming output")
+@click.argument("trailing_message", nargs=-1)
 @click.pass_context
-def agent_cmd(ctx, message, session_id, agent_id, model, thinking, local, json_out, no_stream):
+def agent_cmd(ctx, message, session_id, agent_id, model, thinking, local, json_out, no_stream, trailing_message):
     """Send a message to the PREDATOR agent.
 
     \b
     Examples:
       predator agent -m "Run nmap on 10.0.0.1"
       predator agent -m "Find subdomains for example.com"
-      predator agent -m "Search for username john_doe on social media"
-      predator agent -m "What CVEs affect Apache 2.4.49?"
+      predator agent "What CVEs affect Apache 2.4.49?"
+      predator agent scan this target for me
     """
+    # Accept message from -m option OR as trailing positional arguments
+    if not message and trailing_message:
+        message = " ".join(trailing_message)
+    elif not message:
+        print_error("No message provided. Use: predator agent -m \"your message\" or predator agent your message")
+        sys.exit(1)
     if local:
         asyncio.run(_run_local(
             message=message, session_id=session_id, agent_id=agent_id,
