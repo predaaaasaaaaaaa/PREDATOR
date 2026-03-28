@@ -89,7 +89,7 @@ async def _run_local(
     else:
         provider = AnthropicProvider(
             api_key=profile.api_key if profile else None,
-            default_model=profile.model or config.agent.model if profile else config.agent.model,
+            default_model=(profile.model or config.agent.model) if profile else config.agent.model,
         )
 
     if not provider.is_configured():

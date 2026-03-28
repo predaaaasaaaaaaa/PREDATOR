@@ -72,7 +72,7 @@ class Orchestrator:
             return AnthropicProvider(
                 api_key=profile.api_key if profile else None,
                 base_url=profile.base_url if profile else None,
-                default_model=profile.model or self._config.agent.model if profile else self._config.agent.model,
+                default_model=(profile.model or self._config.agent.model) if profile else self._config.agent.model,
             )
         elif default == "openai":
             profile = providers_config.profiles.get("openai")
@@ -139,6 +139,7 @@ class Orchestrator:
         enable_channels: bool = True,
         enable_cron: bool = True,
         enable_heartbeat: bool = True,
+        channel_filter: list[str] | None = None,
     ) -> None:
         """Start all enabled services."""
         logger.info("Orchestrator starting...")
@@ -166,7 +167,7 @@ class Orchestrator:
                 memory_manager=self._memory_manager,
             )
             try:
-                await self._channel_service.start()
+                await self._channel_service.start(channel_filter=channel_filter)
             except Exception as e:
                 logger.error(f"Channel service failed to start: {e}")
 

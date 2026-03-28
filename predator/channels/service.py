@@ -102,16 +102,30 @@ class ChannelService:
             logger.error(f"Agent error for {ctx.channel}/{ctx.sender_name}: {e}")
             return [ReplyPayload(text=f"Error: {e}", format="plain")]
 
-    async def start(self) -> None:
-        """Start all configured channels and begin listening."""
+    async def start(self, channel_filter: list[str] | None = None) -> None:
+        """Start configured channels and begin listening.
+
+        Args:
+            channel_filter: If provided, only start channels whose id is in this list.
+                           Pass ["all"] or None to start all configured channels.
+        """
         self._channel_registry = create_default_registry()
         self._router = ChannelRouter(
             agent_handler=self._handle_agent_message,
             config=self._config,
         )
 
+        # Normalize filter: None or ["all"] means start everything
+        filter_set = None
+        if channel_filter and "all" not in channel_filter:
+            filter_set = set(channel_filter)
+
         started = 0
         for plugin in self._channel_registry.list_channels():
+            # Apply channel filter
+            if filter_set and plugin.id not in filter_set:
+                continue
+
             if not plugin.is_configured(self._config):
                 continue
 

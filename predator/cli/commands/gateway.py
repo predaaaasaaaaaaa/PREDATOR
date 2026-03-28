@@ -48,6 +48,7 @@ def _run_gateway(host, port, verbose, channels):
             enable_channels=enable_channels,
             enable_cron=False,
             enable_heartbeat=False,
+            channel_filter=channel_filter,
         )
 
         gw_host = host or config.gateway.host or "127.0.0.1"
