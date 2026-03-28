@@ -6,7 +6,10 @@ import asyncio
 
 import click
 
-from predator.cli.theme import console, print_header, print_success, print_error, print_warning, print_info
+from predator.cli.theme import (
+    console, print_banner, print_header, print_success, print_error,
+    print_warning, print_info,
+)
 
 
 @click.group("gateway")
@@ -15,29 +18,104 @@ def gateway_group():
     pass
 
 
+def _run_gateway(host, port, verbose, channels):
+    """Shared logic for gateway run/start commands."""
+    from predator.config.loader import load_config
+    from predator.services.orchestrator import Orchestrator
+
+    config = load_config()
+
+    # Determine which services to enable
+    enable_channels = bool(channels)
+    channel_filter = None
+    if channels:
+        channel_filter = [c.strip().lower() for c in channels.split(",")]
+
+    print_banner(compact=True)
+    console.print()
+
+    async def _start():
+        orch = Orchestrator(config)
+
+        # Apply host/port overrides
+        if host:
+            config.gateway.host = host
+        if port:
+            config.gateway.port = port
+
+        await orch.start(
+            enable_gateway=True,
+            enable_channels=enable_channels,
+            enable_cron=False,
+            enable_heartbeat=False,
+        )
+
+        gw_host = host or config.gateway.host or "127.0.0.1"
+        gw_port = port or config.gateway.port or 18789
+
+        print_success(f"Gateway running on ws://{gw_host}:{gw_port}")
+        print_success(f"Health endpoint: http://{gw_host}:{gw_port + 1}")
+
+        if enable_channels:
+            active = orch._channel_service.active_channels if orch._channel_service else []
+            if active:
+                for ch_id, acc_id in active:
+                    print_success(f"Channel active: {ch_id}/{acc_id}")
+            else:
+                print_warning("No channels started (check config: predator configure channels)")
+        else:
+            print_info("Channels disabled. Use --channels to enable (e.g. --channels telegram)")
+
+        console.print()
+        print_info("Press Ctrl+C to stop")
+
+        try:
+            await orch.wait()
+        finally:
+            await orch.stop()
+
+    try:
+        asyncio.run(_start())
+    except KeyboardInterrupt:
+        print_warning("Gateway shutting down...")
+
+
 @gateway_group.command("run")
 @click.option("--host", default=None, help="Bind host (default: 127.0.0.1)")
 @click.option("--port", "-p", default=None, type=int, help="Bind port (default: 18789)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
-def gateway_run(host, port, verbose):
+@click.option("--channels", default=None, help="Enable channels (e.g. telegram, discord, or 'all')")
+def gateway_run(host, port, verbose, channels):
     """Start the PREDATOR Gateway server.
 
+    \b
     The gateway is the WebSocket control plane that manages agent sessions,
     tool execution, and plugin lifecycle.
+
+    \b
+    Examples:
+      predator gateway run                          Start gateway only
+      predator gateway run --channels telegram      Start with Telegram bot
+      predator gateway run --channels all           Start with all configured channels
     """
-    from predator.config.loader import load_config
-    from predator.gateway.server import GatewayServer
+    _run_gateway(host, port, verbose, channels)
 
-    config = load_config()
-    server = GatewayServer(config)
 
-    console.print("[bold red]Starting PREDATOR Gateway...[/bold red]")
+@gateway_group.command("start")
+@click.option("--host", default=None, help="Bind host (default: 127.0.0.1)")
+@click.option("--port", "-p", default=None, type=int, help="Bind port (default: 18789)")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.option("--channels", default=None, help="Enable channels (e.g. telegram, discord, or 'all')")
+def gateway_start(host, port, verbose, channels):
+    """Start the PREDATOR Gateway server (alias for 'run').
 
-    try:
-        asyncio.run(server.start(host=host, port=port, verbose=verbose))
-    except KeyboardInterrupt:
-        print_warning("Gateway shutting down...")
-        asyncio.run(server.stop())
+    \b
+    Examples:
+      predator gateway start                          Start gateway only
+      predator gateway start --channels telegram      Start with Telegram bot
+      predator gateway start --channels all           Start with all configured channels
+    """
+    _run_gateway(host, port, verbose, channels)
 
 
 @gateway_group.command("status")
