@@ -75,8 +75,10 @@ def _apply_profile(argv: list[str]) -> list[str]:
 
 def main() -> None:
     """Main entry point — called by `predator` CLI or `python -m predator`."""
-    # Platform gate
-    _assert_platform()
+    # Allow --help and --version to bypass platform check
+    help_flags = {"--help", "-h", "--version"}
+    if not (help_flags & set(sys.argv[1:])):
+        _assert_platform()
 
     # Environment
     _load_env()
@@ -87,7 +89,14 @@ def main() -> None:
     # Import and run CLI
     from predator.cli.program import cli
 
-    cli(args=argv, standalone_mode=True)
+    try:
+        cli(args=argv, standalone_mode=True)
+    except SystemExit:
+        raise
+    except Exception as e:
+        from rich.console import Console
+        Console(stderr=True).print(f"[bold red]Error:[/bold red] {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
