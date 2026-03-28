@@ -602,6 +602,7 @@ class SubagentSpawner:
 
         from predator.agents.runtime import AgentRuntime
         from predator.config.loader import load_config
+        from predator.hooks.runner import HookRunner
         from predator.providers.anthropic import AnthropicProvider
         from predator.providers.ollama import OllamaProvider
         from predator.providers.openai import OpenAIProvider
@@ -618,35 +619,46 @@ class SubagentSpawner:
         thinking_map = {"off": 0, "low": 4096, "medium": 8192, "high": 16384}
         config.agent.thinking_budget = thinking_map.get(params.thinking_level, 4096)
 
-        # Resolve provider from config (not hardcoded Anthropic)
+        # Resolve provider from config — matches orchestrator._resolve_provider()
         providers_config = config.providers
         default = providers_config.default
         profile = providers_config.profiles.get(default)
 
-        if default == "ollama":
-            provider = OllamaProvider(
-                base_url=profile.base_url if profile else "http://localhost:11434",
-                default_model=profile.model if profile else "llama3.1",
+        if default == "anthropic":
+            provider = AnthropicProvider(
+                api_key=profile.api_key if profile else None,
+                base_url=profile.base_url if profile else None,
+                default_model=(profile.model or config.agent.model) if profile else config.agent.model,
             )
         elif default == "openai":
             provider = OpenAIProvider(
                 api_key=profile.api_key if profile else None,
                 base_url=profile.base_url if profile else None,
             )
-        else:
-            provider = AnthropicProvider(
-                api_key=profile.api_key if profile else None,
-                default_model=profile.model or config.agent.model if profile else config.agent.model,
+        elif default == "ollama":
+            provider = OllamaProvider(
+                base_url=profile.base_url if profile else "http://localhost:11434",
+                default_model=profile.model if profile else "llama3.1",
             )
+        elif default == "openrouter":
+            from predator.providers.openrouter import OpenRouterProvider
+            provider = OpenRouterProvider(
+                api_key=profile.api_key if profile else None,
+            )
+        else:
+            provider = AnthropicProvider(default_model=config.agent.model)
 
         registry = create_default_registry()
         transcript = SessionTranscript(record.session_key, record.agent_id)
+        hook_runner = HookRunner()
 
         runtime = AgentRuntime(
             provider=provider,
             registry=registry,
             config=config,
+            hook_runner=hook_runner,
             transcript=transcript,
+            lane=CommandLane.SUBAGENT,
         )
 
         return runtime
