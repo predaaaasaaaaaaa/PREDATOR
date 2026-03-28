@@ -475,7 +475,7 @@ def _onboard_channel(config: PredatorConfig, channel_key: str) -> PredatorConfig
     print_success(f"{info['name']} configured and saved!")
 
     # Show how to start
-    console.print(f"\n  [{DIM}]To start with {info['name']}:[/] [bold {GREEN}]predator gateway start --channels {channel_key}[/]")
+    console.print(f"\n  [{DIM}]To start with {info['name']}:[/] [bold #FF0033]predator gateway start --channels {channel_key}[/]")
 
     return config
 
@@ -842,13 +842,15 @@ def configure_cmd(section: Optional[str] = None):
 
     console.print()
     console.print(Panel(
-        f"[bold {GREEN}]Configuration complete![/]\n\n"
-        f"[{DIM}]Config saved to:[/] [{CYAN}]{get_config_path()}[/]\n\n"
+        f"[bold {RED}]Configuration complete![/]\n\n"
+        f"[{DIM}]Config saved to:[/] [{DIM}]{get_config_path()}[/]\n\n"
         f"[bold {RED}]Quick start:[/]\n"
-        f"  [{GREEN}]$[/] [bold]predator gateway start[/]              [{DIM}]Start the gateway[/]\n"
-        f"  [{GREEN}]$[/] [bold]predator gateway start --channels telegram[/]  [{DIM}]Start with Telegram[/]\n"
-        f"  [{GREEN}]$[/] [bold]predator agent -m '...'[/]             [{DIM}]Talk to the agent directly[/]",
-        border_style=GREEN,
+        f"  [dim #CC0029]$[/] [bold #FF0033]predator gateway start[/]                        [{DIM}]Start the gateway[/]\n"
+        f"  [dim #CC0029]$[/] [bold #FF0033]predator gateway start --channels telegram[/]     [{DIM}]Start with Telegram[/]\n"
+        f"  [dim #CC0029]$[/] [bold #FF0033]predator gateway start --channels all[/]          [{DIM}]Start all channels[/]\n"
+        f"  [dim #CC0029]$[/] [bold #FF0033]predator agent -m \"...\"[/]                       [{DIM}]Talk to the agent[/]\n"
+        f"  [dim #CC0029]$[/] [bold #FF0033]predator daemon run[/]                            [{DIM}]Full autonomous mode[/]",
+        border_style=RED,
         title=f"[bold {RED}]PREDATOR[/]",
         title_align="left",
     ))
