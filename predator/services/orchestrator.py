@@ -63,13 +63,37 @@ class Orchestrator:
         self._shutdown_event = asyncio.Event()
 
     def _resolve_provider(self) -> BaseProvider:
-        """Resolve LLM provider from config."""
-        default = self._config.providers.default
-        if default == "openai":
-            return OpenAIProvider()
+        """Resolve LLM provider from config — reads profiles for proper initialization."""
+        providers_config = self._config.providers
+        default = providers_config.default
+
+        if default == "anthropic":
+            profile = providers_config.profiles.get("anthropic")
+            return AnthropicProvider(
+                api_key=profile.api_key if profile else None,
+                base_url=profile.base_url if profile else None,
+                default_model=profile.model or self._config.agent.model if profile else self._config.agent.model,
+            )
+        elif default == "openai":
+            profile = providers_config.profiles.get("openai")
+            return OpenAIProvider(
+                api_key=profile.api_key if profile else None,
+                base_url=profile.base_url if profile else None,
+            )
         elif default == "ollama":
-            return OllamaProvider()
-        return AnthropicProvider(default_model=self._config.agent.model)
+            profile = providers_config.profiles.get("ollama")
+            return OllamaProvider(
+                base_url=profile.base_url if profile else "http://localhost:11434",
+                default_model=profile.model if profile else "llama3.1",
+            )
+        elif default == "openrouter":
+            from predator.providers.openrouter import OpenRouterProvider
+            profile = providers_config.profiles.get("openrouter")
+            return OpenRouterProvider(
+                api_key=profile.api_key if profile else None,
+            )
+        else:
+            return AnthropicProvider(default_model=self._config.agent.model)
 
     def _create_agent_runtime(self, session_id: str = "main") -> AgentRuntime:
         """Factory that creates an AgentRuntime for a given session."""

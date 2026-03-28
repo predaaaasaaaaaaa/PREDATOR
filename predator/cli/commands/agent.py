@@ -75,12 +75,22 @@ async def _run_local(
     config.agent.thinking_budget = thinking_map.get(thinking, 4096)
 
     default_provider = config.providers.default
+    profile = config.providers.profiles.get(default_provider)
     if default_provider == "openai":
-        provider = OpenAIProvider()
+        provider = OpenAIProvider(
+            api_key=profile.api_key if profile else None,
+            base_url=profile.base_url if profile else None,
+        )
     elif default_provider == "ollama":
-        provider = OllamaProvider()
+        provider = OllamaProvider(
+            base_url=profile.base_url if profile else "http://localhost:11434",
+            default_model=profile.model if profile else "llama3.1",
+        )
     else:
-        provider = AnthropicProvider(default_model=config.agent.model)
+        provider = AnthropicProvider(
+            api_key=profile.api_key if profile else None,
+            default_model=profile.model or config.agent.model if profile else config.agent.model,
+        )
 
     if not provider.is_configured():
         print_error("No LLM provider configured. Run 'predator setup' first.")
