@@ -127,6 +127,13 @@ class AgentRuntime:
         self._use_streaming = True  # Enable streaming by default
         self._session_key: str = ""  # Set during run()
 
+        # Orchestration improvements (from agent-orchestra patterns)
+        self._loop_detector = LoopDetector()
+        self._max_stuck_retries = 3  # Kill after N stuck iterations
+        self._stuck_count = 0
+        self._token_budget = config.agent.max_tokens * 20 if config else 160_000  # Per-run budget
+        self._last_error: str = ""
+
     def _build_system_prompt(self, session_type: str = "main") -> str:
         """Build the system prompt with platform context, tool info, and workspace files."""
         platform_info = None
@@ -482,12 +489,61 @@ class AgentRuntime:
                     tool_call_id=tc.id,
                 ))
 
+                # Record call for loop detection
+                self._loop_detector.record_call(
+                    tool_name=tc.name,
+                    arguments=tc.arguments,
+                    result=result.output[:500] if result.output else "",
+                )
+
+            # --- Loop detection check ---
+            loop_msg = self._loop_detector.check_loop()
+            if loop_msg:
+                self._stuck_count += 1
+                log.warning(f"Loop detected (stuck count: {self._stuck_count}): {loop_msg}")
+
+                if self._stuck_count >= self._max_stuck_retries:
+                    # Kill — too many stuck iterations
+                    log.error(f"Agent stuck after {self._stuck_count} retries, terminating")
+                    final_text = (
+                        f"[Agent terminated: stuck in a loop after {self._stuck_count} retries]\n"
+                        f"Loop: {loop_msg}\n"
+                        f"Last output: {final_text[:500] if final_text else '(none)'}"
+                    )
+                    turn.elapsed = time.time() - turn_start
+                    turns.append(turn)
+                    break
+
+                # Forced reflection — inject a reflection prompt to break the loop
+                reflection_prompt = (
+                    f"[SYSTEM] Loop detected: {loop_msg}\n"
+                    f"You have been repeating the same action. Stop and reflect:\n"
+                    f"1. What failed?\n"
+                    f"2. What specific change would fix it?\n"
+                    f"3. Are you repeating the same approach?\n"
+                    f"Try a DIFFERENT approach or report that you cannot complete the task."
+                )
+                conversation.append(ModelMessage(role="user", content=reflection_prompt))
+                self._loop_detector.reset()
+
+            # --- Token budget check ---
+            if total_tokens >= self._token_budget:
+                log.warning(f"Token budget exhausted: {total_tokens}/{self._token_budget}")
+                final_text += "\n\n[Token budget exhausted — stopping to prevent runaway costs]"
+                turn.elapsed = time.time() - turn_start
+                turns.append(turn)
+                break
+
             turn.elapsed = time.time() - turn_start
             turns.append(turn)
 
         # Determine stop reason
         if self._aborted:
             stopped_reason = "aborted"
+        elif self._stuck_count >= self._max_stuck_retries:
+            stopped_reason = "stuck_loop"
+        elif total_tokens >= self._token_budget:
+            stopped_reason = "token_budget"
         elif turn_number >= self._max_turns:
             stopped_reason = "max_turns"
             final_text += "\n\n[Reached maximum number of tool-use turns]"
