@@ -603,6 +603,8 @@ class SubagentSpawner:
         from predator.agents.runtime import AgentRuntime
         from predator.config.loader import load_config
         from predator.providers.anthropic import AnthropicProvider
+        from predator.providers.ollama import OllamaProvider
+        from predator.providers.openai import OpenAIProvider
         from predator.sessions.transcript import SessionTranscript
         from predator.tools.registry import create_default_registry
 
@@ -616,7 +618,27 @@ class SubagentSpawner:
         thinking_map = {"off": 0, "low": 4096, "medium": 8192, "high": 16384}
         config.agent.thinking_budget = thinking_map.get(params.thinking_level, 4096)
 
-        provider = AnthropicProvider(default_model=config.agent.model)
+        # Resolve provider from config (not hardcoded Anthropic)
+        providers_config = config.providers
+        default = providers_config.default
+        profile = providers_config.profiles.get(default)
+
+        if default == "ollama":
+            provider = OllamaProvider(
+                base_url=profile.base_url if profile else "http://localhost:11434",
+                default_model=profile.model if profile else "llama3.1",
+            )
+        elif default == "openai":
+            provider = OpenAIProvider(
+                api_key=profile.api_key if profile else None,
+                base_url=profile.base_url if profile else None,
+            )
+        else:
+            provider = AnthropicProvider(
+                api_key=profile.api_key if profile else None,
+                default_model=profile.model or config.agent.model if profile else config.agent.model,
+            )
+
         registry = create_default_registry()
         transcript = SessionTranscript(record.session_key, record.agent_id)
 
